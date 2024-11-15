@@ -26,8 +26,8 @@ class QuizManager:
 
         Note: This initialization method is crucial for setting the foundation of the `QuizManager` class, enabling it to manage the quiz questions effectively. The class will rely on this setup to perform operations such as retrieving specific questions by index and navigating through the quiz.
         """
-        ##### YOUR CODE HERE #####
-        pass # Placeholder
+        self.questions = questions  # Store the list of quiz questions
+        self.total_questions = len(questions)  # Calculate total number of questions
     ##########################################################
 
     def get_question_at_index(self, index: int):
@@ -61,8 +61,9 @@ class QuizManager:
 
         Note: Ensure that `st.session_state["question_index"]` is initialized before calling this method. This navigation method enhances the user experience by providing fluid access to quiz questions.
         """
-        ##### YOUR CODE HERE #####
-        pass  # Placeholder for implementation
+        current_index = st.session_state.get("question_index", 0)  # Retrieve current index or default to 0
+        new_index = (current_index + direction) % self.total_questions  # Adjust index with wrapping
+        st.session_state["question_index"] = new_index  # Update the session state with the new index
     ##########################################################
 
 
@@ -71,7 +72,7 @@ if __name__ == "__main__":
     
     embed_config = {
         "model_name": "textembedding-gecko@003",
-        "project": "YOUR-PROJECT-ID-HERE",
+        "project": "",
         "location": "us-central1"
     }
     
@@ -103,6 +104,7 @@ if __name__ == "__main__":
                 
                 # Test the Quiz Generator
                 generator = QuizGenerator(topic_input, questions, chroma_creator)
+                generator.init_llm()
                 question_bank = generator.generate_quiz()
 
     if question_bank:
@@ -112,30 +114,26 @@ if __name__ == "__main__":
             
             # Task 9
             ##########################################################
-            quiz_manager = # Use our new QuizManager class
+            quiz_manager = QuizManager(question_bank)  # Use our new QuizManager class
             # Format the question and display
             with st.form("Multiple Choice Question"):
-                ##### YOUR CODE HERE #####
-                index_question = # Use the get_question_at_index method to set the 0th index
-                ##### YOUR CODE HERE #####
+                index_question = quiz_manager.get_question_at_index(0)  # Use the get_question_at_index method to set the 0th index
                 
                 # Unpack choices for radio
                 choices = []
-                for choice in index_question['choices']: # For loop unpack the data structure
-                    ##### YOUR CODE HERE #####
-                    # Set the key from the index question 
-                    # Set the value from the index question
-                    ##### YOUR CODE HERE #####
-                    choices.append(f"{key}) {value}")
+                for choice in index_question['choices']:  # Iterate over the choices directly
+                    key = choice['key']  # Get the key from the choice dictionary
+                    value = choice['value']  # Get the value from the choice dictionary
+                    choices.append(f"{key}) {value}")  # Append formatted choice to the list
                 
-                ##### YOUR CODE HERE #####
                 # Display the question onto streamlit
-                ##### YOUR CODE HERE #####
+                st.write(index_question['question'])  # Assuming the question text is stored under 'question'
                 
                 answer = st.radio( # Display the radio button with the choices
                     'Choose the correct answer',
                     choices
                 )
+                
                 st.form_submit_button("Submit")
                 
                 if submitted: # On click submit 

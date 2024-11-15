@@ -41,7 +41,8 @@ class QuizGenerator:
             3. Provide the correct answer for the question from the list of answers as key "answer"
             4. Provide an explanation as to why the answer is correct as key "explanation"
             
-            You must respond as a JSON object with the following structure:
+            You must respond as a JSON object with the following structure **only**:
+            
             {{
                 "question": "<question>",
                 "choices": [
@@ -53,6 +54,8 @@ class QuizGenerator:
                 "answer": "<answer key from choices list>",
                 "explanation": "<explanation as to why the answer is correct>"
             }}
+            
+            Do **not** include anything else other than the above JSON object.
             
             Context: {context}
             """
@@ -78,29 +81,77 @@ class QuizGenerator:
 
         :return: A JSON object representing the generated quiz question.
         """
-        if not self.llm:
-            self.init_llm()
-        if not self.vectorstore:
-            raise ValueError("Vectorstore not provided.")
+        # if not self.llm:
+        #     self.init_llm()
+        # if not self.vectorstore:
+        #     raise ValueError("Vectorstore not provided.")
+        
+        # from langchain_core.runnables import RunnablePassthrough, RunnableParallel
+
+        # # Enable a Retriever
+        # retriever = self.vectorstore.as_retriever()
+        
+        # # Use the system template to create a PromptTemplate
+        # prompt = PromptTemplate.from_template(self.system_template)
+        
+        # # RunnableParallel allows Retriever to get relevant documents
+        # # RunnablePassthrough allows chain.invoke to send self.topic to LLM
+        # setup_and_retrieval = RunnableParallel(
+        #     {"context": retriever, "topic": RunnablePassthrough()}
+        # )
+        # # Create a chain with the Retriever, PromptTemplate, and LLM
+        # chain = setup_and_retrieval | prompt | self.llm 
+
+        # # Invoke the chain with the topic as input
+        # response = chain.invoke(self.topic)
+        # return response
+        
+        # Raise an error if the vectorstore is not initialized on the class
+        if not self.llm or not self.vectorstore:
+            raise Exception("LLM or vectorstore is not initialized.")
         
         from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 
-        # Enable a Retriever
-        retriever = self.vectorstore.as_retriever()
+        # Enable a Retriever using the as_retriever() method on the VectorStore object
+        # Use the vectorstore as the retriever initialized on the class
+        relevant_docs = self.vectorstore.query_chroma_collection(self.topic)
+
+        # Determine how many documents are available
+        available_docs_count = len(relevant_docs)
+
+        # Set n_results based on the available documents
+        n_results = min(available_docs_count, self.num_questions)
         
-        # Use the system template to create a PromptTemplate
-        prompt = PromptTemplate.from_template(self.system_template)
+        # Check if relevant_docs is not empty
+        if not relevant_docs:
+            raise Exception("No relevant documents found for the given topic.")
         
-        # RunnableParallel allows Retriever to get relevant documents
-        # RunnablePassthrough allows chain.invoke to send self.topic to LLM
-        setup_and_retrieval = RunnableParallel(
-            {"context": retriever, "topic": RunnablePassthrough()}
-        )
-        # Create a chain with the Retriever, PromptTemplate, and LLM
-        chain = setup_and_retrieval | prompt | self.llm 
+        # Use the .from_template method on the PromptTemplate class and pass in the system template
+        prompt = f"""
+            You are a subject matter expert on the topic: {self.topic}.
+
+            Generate a quiz question based on the topic provided and provide the result in **only** the following JSON format:
+
+            {{
+                "question": "<question>",
+                "choices": [
+                    {{"key": "A", "value": "<choice 1>"}},
+                    {{"key": "B", "value": "<choice 2>"}},
+                    {{"key": "C", "value": "<choice 3>"}},
+                    {{"key": "D", "value": "<choice 4>"}}
+                ],
+                "answer": "<answer key from choices list>",
+                "explanation": "<explanation as to why the answer is correct>"
+            }}
+
+            Do **not** include anything else other than the above JSON object.
+
+            Context: {relevant_docs[:n_results]}
+            """
 
         # Invoke the chain with the topic as input
-        response = chain.invoke(self.topic)
+        response = self.llm.invoke(prompt)
+
         return response
 
     def generate_quiz(self) -> list:
@@ -122,27 +173,47 @@ class QuizGenerator:
         Note: This method relies on `generate_question_with_vectorstore` for question generation and `validate_question` for ensuring question uniqueness. Ensure `question_bank` is properly initialized and managed.
         """
         self.question_bank = [] # Reset the question bank
+        retry_limit = 5  # Set a retry limit
+        
+        # Adjust the number of requested results
+        # n_results = min(self.num_questions, len(self.question_bank))  # Ensure we don't exceed available questions
+        print(self.num_questions)
+        for i in range(self.num_questions):
+            for attempt in range(retry_limit):
+                if len(self.question_bank) >= self.num_questions:
+                    break
+                
+                question_str = self.generate_question_with_vectorstore()  # Use class method to generate question
+                if not question_str.strip():
+                    print(f"Attempt {attempt + 1} failed to generate a question: Empty response.")
+                    continue
 
-        for _ in range(self.num_questions):
-            ##### YOUR CODE HERE #####
-            question_str = # Use class method to generate question
-            
-            ##### YOUR CODE HERE #####
-            try:
-                # Convert the JSON String to a dictionary
-            except json.JSONDecodeError:
-                print("Failed to decode question JSON.")
-                continue  # Skip this iteration if JSON decoding fails
-            ##### YOUR CODE HERE #####
+                import re
+                def extract_json_content(response):
+                    """Extract JSON content from a string that may contain code block markers."""
+                    # Remove code block markers (e.g., ```json ... ```)
+                    return re.sub(r'```(?:json)?\n|```', '', response).strip()
+                
+                
+                # Clean the response
+                cleaned_response = extract_json_content(question_str)
+                # print("Response Content:", repr(cleaned_response))
+                
+                try:
+                    question = json.loads(cleaned_response)  # Convert the JSON String to a dictionary
+                    # question_json = json.loads(question_str)
+                    # print("Converted JSON:", question_json)  # Output the JSON object
+                except json.JSONDecodeError as e:
+                    print("\nFailed to decode question JSON.", e)
+                    print(cleaned_response)
+                    continue  # Skip this iteration if JSON decoding fails
 
-            ##### YOUR CODE HERE #####
-            # Validate the question using the validate_question method
-            if self.validate_question(question):
-                print("Successfully generated unique question")
-                # Add the valid and unique question to the bank
-            else:
-                print("Duplicate or invalid question detected.")
-            ##### YOUR CODE HERE #####
+                # Validate the question using the validate_question method
+                if self.validate_question(question):
+                    print("\nSuccessfully generated unique question ", i)
+                    self.question_bank.append(question)  # Add the valid and unique question to the bank
+                else:
+                    print("\n\nDuplicate or invalid question detected.", question)
 
         return self.question_bank
 
@@ -166,19 +237,25 @@ class QuizGenerator:
 
         Note: This method assumes `question` is a valid dictionary and `question_bank` has been properly initialized.
         """
-        ##### YOUR CODE HERE #####
+        if not self.question_bank:  # Check if question_bank is empty
+            return True  # If empty, the question is unique by default
+        
+        question_text = question.get("question")  # Extract the question text from the dictionary
+        
         # Consider missing 'question' key as invalid in the dict object
         # Check if a question with the same text already exists in the self.question_bank
-        ##### YOUR CODE HERE #####
-        return is_unique
-
+        for existing_question in self.question_bank:  # Iterate over existing questions
+            if existing_question.get("question") == question_text:  # Compare texts
+                return False  # Return False if a duplicate is found
+            
+        return True  # Return True if no duplicates are found
 
 # Test Generating the Quiz
 if __name__ == "__main__":
     
     embed_config = {
         "model_name": "textembedding-gecko@003",
-        "project": "YOUR-PROJECT-ID-HERE",
+        "project": "",
         "location": "us-central1"
     }
     
@@ -210,6 +287,7 @@ if __name__ == "__main__":
                 
                 # Test the Quiz Generator
                 generator = QuizGenerator(topic_input, questions, chroma_creator)
+                generator.init_llm()
                 question_bank = generator.generate_quiz()
                 question = question_bank[0]
 

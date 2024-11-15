@@ -58,6 +58,15 @@ class ChromaCollectionCreator:
         # https://python.langchain.com/docs/modules/data_connection/document_transformers/character_text_splitter
         # [Your code here for splitting documents]
         
+        processed_texts = [page.page_content for page in self.processor.pages]
+        combined_text = " ".join(processed_texts)
+
+        # Initialize the text splitter
+        text_splitter = CharacterTextSplitter(separator="\n", chunk_size=3000, chunk_overlap=20)
+
+        # Split the text into chunks
+        texts = text_splitter.split_text(combined_text)
+        
         if texts is not None:
             st.success(f"Successfully split pages to {len(texts)} documents!", icon="✅")
 
@@ -65,6 +74,10 @@ class ChromaCollectionCreator:
         # https://docs.trychroma.com/
         # Create a Chroma in-memory client using the text chunks and the embeddings model
         # [Your code here for creating Chroma collection]
+        
+        # Create Document objects from the text chunks
+        documents = [Document(page_content=chunk) for chunk in texts]   
+        self.db = Chroma.from_documents(documents, self.embed_model)
         
         if self.db:
             st.success("Successfully created Chroma Collection!", icon="✅")
@@ -93,7 +106,7 @@ if __name__ == "__main__":
     
     embed_config = {
         "model_name": "textembedding-gecko@003",
-        "project": "YOUR PROJECT ID HERE",
+        "project": "",
         "location": "us-central1"
     }
     
